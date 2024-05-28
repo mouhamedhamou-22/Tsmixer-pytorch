@@ -125,6 +125,7 @@ class Mixer_Layer(nn.Module):
 
 class Backbone(nn.Module):
     def __init__(self, configs): 
+        
         super(Backbone, self).__init__()
          
         self.seq_len = seq_len = configs.seq_len
@@ -158,8 +159,8 @@ class Model(nn.Module):
 
 
     def forward(self, x, batch_x_mark, dec_inp, batch_y_mark):
-        z = self.rev(x, 'norm') # B, L, D -> B, L, D
-        z = self.backbone(z) # B, L, D -> B, H, D
-        z = self.rev(z, 'denorm') # B, H, D -> B, H, D
+        # z = self.rev(x, 'norm') # B, L, D -> B, L, D
+        z = self.backbone(x) # B, L, D -> B, H, D
+        # z = self.rev(z, 'denorm') # B, H, D -> B, H, D
         return z
 
