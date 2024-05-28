@@ -66,7 +66,7 @@ class RevIN(nn.Module):
 
 
 class Mlp_feat(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.):
+    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.9):
         super(Mlp_feat, self).__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -75,7 +75,7 @@ class Mlp_feat(nn.Module):
         self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
 
-    def forward(self, x): # B, L, D -> B, L, D
+    def forward(self, x):# B, L, D -> B, L, D
         x = self.fc1(x)
         x = self.act(x)
         x = self.drop(x)
@@ -84,7 +84,7 @@ class Mlp_feat(nn.Module):
         return x
 
 class Mlp_time(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.):
+    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.9):
         super(Mlp_time, self).__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -117,28 +117,33 @@ class Mixer_Layer(nn.Module):
         x = self.MLP_time(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, D, L -> B, D, L -> B, L, D
         x = x + res1
 
-        # res2 = x
-        # x = self.batchNorm2D(x)
-        # x = self.MLP_feat(x) # B, L, D -> B, L, D
-        # x = x + res2
+        res2 = x
+        x = self.batchNorm2D(x)
+        x = self.MLP_feat(x) # B, L, D -> B, L, D
+        x = x + res2
         return x
 
 class Backbone(nn.Module):
-    def __init__(self, configs):
+    def __init__(self, configs): 
         super(Backbone, self).__init__()
-
+         
         self.seq_len = seq_len = configs.seq_len
         self.pred_len = pred_len = configs.pred_len
         self.enc_in = enc_in = configs.enc_in
         self.layer_num = layer_num = 1
-
+        
         self.mix_layer = Mixer_Layer(seq_len, enc_in)
         self.temp_proj = nn.Linear(self.seq_len, self.pred_len)
-
-    def forward(self, x): # B, L, D -> B, H, D
-        x = self.mix_layer(x) # B, L, D -> B, L, D
+    
+    def forward(self, x):
+        
+        # B, L, D -> B, H, D
+        n_block = 6
+        for _ in range(n_block):
+            x = self.mix_layer(x) # B, L, D -> B, L, D
         x = self.temp_proj(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, H, D
         return x
+
 
 class Model(nn.Module):
 
