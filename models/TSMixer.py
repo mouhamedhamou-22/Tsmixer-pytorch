@@ -66,7 +66,7 @@ class RevIN(nn.Module):
 
 
 class Mlp_feat(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.9):
+    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.):
         super(Mlp_feat, self).__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -84,7 +84,7 @@ class Mlp_feat(nn.Module):
         return x
 
 class Mlp_time(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.9):
+    def __init__(self, in_features, hidden_features=None, out_features=None, drop=0.):
         super(Mlp_time, self).__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
