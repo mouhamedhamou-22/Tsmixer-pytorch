@@ -109,7 +109,7 @@ class Mixer_Layer(nn.Module):
         # self.batchNorm2D = nn.LayerNorm([time_dim, feat_dim]) # the norm of the paper, seems bad
         self.batchNorm2D = nn.BatchNorm1d(time_dim)
         self.MLP_time = Mlp_time(time_dim, time_dim)
-        # self.MLP_feat = Mlp_feat(feat_dim, feat_dim)
+        self.MLP_feat = Mlp_feat(feat_dim, feat_dim)
 
     def forward(self, x): # # B, L, D -> B, L, D
         res1 = x
@@ -117,10 +117,10 @@ class Mixer_Layer(nn.Module):
         x = self.MLP_time(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, D, L -> B, D, L -> B, L, D
         x = x + res1
 
-        # res2 = x
-        # x = self.batchNorm2D(x)
-        # x = self.MLP_feat(x) # B, L, D -> B, L, D
-        # x = x + res2
+        res2 = x
+        x = self.batchNorm2D(x)
+        x = self.MLP_feat(x) # B, L, D -> B, L, D
+        x = x + res2
         return x
 
 class Backbone(nn.Module):
@@ -131,12 +131,14 @@ class Backbone(nn.Module):
         self.pred_len = pred_len = configs.pred_len
         self.enc_in = enc_in = configs.enc_in
         self.layer_num = layer_num = 1
-
+         
         self.mix_layer = Mixer_Layer(seq_len, enc_in)
         self.temp_proj = nn.Linear(self.seq_len, self.pred_len)
 
-    def forward(self, x): # B, L, D -> B, H, D
-        x = self.mix_layer(x) # B, L, D -> B, L, D
+    def forward(self, x):# B, L, D -> B, H, D
+        n_block = 6
+        for _ in range(n_block):
+            x = self.mix_layer(x)   
         x = self.temp_proj(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, H, D
         return x
 
