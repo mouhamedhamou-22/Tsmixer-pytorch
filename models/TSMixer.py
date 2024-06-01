@@ -96,30 +96,24 @@ class Mlp_time(nn.Module):
 
 
 class Mixer_Layer(nn.Module):
-    def __init__(self, time_dim, feat_dim, d_model, d_ff, n_heads, dropout):
+    def __init__(self, time_dim, feat_dim):
         super(Mixer_Layer, self).__init__()
-        self.time_dim = time_dim
-        self.feat_dim = feat_dim
-        self.d_model = d_model
-        self.d_ff = d_ff
-        self.n_heads = n_heads
-        self.dropout = dropout
+        self.batchNorm2D = nn.BatchNorm1d(feat_dim)
+        self.MLP_time = Mlp_time(time_dim, time_dim)
+        self.MLP_feat = Mlp_feat(feat_dim, feat_dim)
 
-        self.batchNorm2D = nn.BatchNorm1d(time_dim)
-        self.MLP_time = Mlp_time(time_dim, d_model, time_dim, drop=dropout)
-        self.MLP_feat = Mlp_feat(feat_dim, d_ff, feat_dim, drop=dropout)
-
-    def forward(self, x):  # B, L, D -> B, L, D
+    def forward(self, x): # B, L, D -> B, L, D
         res1 = x
-        x = self.batchNorm2D(x)
-        x = self.MLP_time(x.permute(0, 2, 1)).permute(0, 2, 1)  # B, L, D -> B, D, L -> B, D, L -> B, L, D
+        x = self.batchNorm2D(x.permute(0, 2, 1)).permute(0, 2, 1)  # B, L, D -> B, D, L -> B, D, L -> B, L, D
+        x = self.MLP_time(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, D, L -> B, D, L -> B, L, D
         x = x + res1
 
         res2 = x
-        x = self.batchNorm2D(x)
-        x = self.MLP_feat(x)  # B, L, D -> B, L, D
+        x = self.batchNorm2D(x.permute(0, 2, 1)).permute(0, 2, 1)  # B, L, D -> B, D, L -> B, D, L -> B, L, D
+        x = self.MLP_feat(x) # B, L, D -> B, L, D
         x = x + res2
         return x
+
 
 
 class Backbone(nn.Module):
