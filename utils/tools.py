@@ -88,17 +88,33 @@ class StandardScaler():
         return (data * self.std) + self.mean
 
 
-def visual(true, preds=None, name='./pic/test.pdf'):
+def visual(true, preds=None, name='./pic/test.pdf', data_name=None, seq_len=None, pred_len=None):
     """
     Results visualization
+
+    Parameters:
+    - true: Ground truth values.
+    - preds: Predicted values.
+    - name: Path to save the visualization.
+    - data_name: Name of the dataset.
+    - seq_len: Length of the sequence.
+    - pred_len: Length of the predictions.
     """
     plt.figure()
     plt.plot(true, label='GroundTruth', linewidth=2)
     if preds is not None:
         plt.plot(preds, label='Prediction', linewidth=2)
     plt.legend()
+    
+    title = "Ground Truth vs Prediction"
+    if data_name:
+        title += f" for {data_name}"
+    if seq_len and pred_len:
+        title += f" (Seq Len: {seq_len}, Pred Len: {pred_len})"
+    
+    plt.title(title)
     plt.savefig(name, bbox_inches='tight')
-
+    plt.close()
 def test_params_flop(model,x_shape):
     """
     If you want to thest former's flop, you need to give default value to inputs in model.forward(), the following code can only pass one argument to forward()

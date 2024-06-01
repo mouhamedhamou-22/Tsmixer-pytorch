@@ -117,6 +117,7 @@ class Exp_Main(Exp_Basic):
             os.makedirs(path)
 
         time_now = time.time()
+        train_start_time = time.time()
 
         train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
@@ -220,7 +221,15 @@ class Exp_Main(Exp_Basic):
                 adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
             else:
                 print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
-
+                
+        train_end_time = time.time() 
+        training_time = train_end_time - train_start_time
+        num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        
+        with open("result.txt", 'a') as f:
+            f.write(f"Training time: {training_time:.4f} seconds\n")
+            f.write(f"Number of parameters: {num_params}\n")
+            
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
 
@@ -289,7 +298,7 @@ class Exp_Main(Exp_Basic):
                     input = batch_x.detach().cpu().numpy()
                     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                     pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
-                    visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
+                    visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'), data_name=setting, seq_len=batch_x.shape[1], pred_len=self.args.pred_len)
 
         if self.args.test_flop:
             test_params_flop((batch_x.shape[1],batch_x.shape[2]))
