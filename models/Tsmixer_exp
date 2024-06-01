@@ -237,7 +237,7 @@ class Backbone_cov(nn.Module):
         # 4
         z_mlp = self.mlp(z_point) # B, D, L * P -> B, D, H
 
-        return ( z_mlp).permute(0,2,1)
+        return (z_mlp).permute(0,2,1)
 
 class Model(nn.Module):
 
