@@ -135,8 +135,8 @@ class Backbone(nn.Module):
         self.mix_layer = Mixer_Layer(seq_len, enc_in)
         self.temp_proj = nn.Linear(self.seq_len, self.pred_len)
 
-     def forward(self, x):  # B, L, D -> B, H, D
-        for _ in range(self.n_heads):
+    def forward(self, x):  # B, L, D -> B, H, D
+        for _ in range(self.n_heads):  
             x = self.mix_layer(x)  # B, L, D -> B, L, D
         x = self.temp_proj(x.permute(0, 2, 1)).permute(0, 2, 1)  # B, L, D -> B, H, D
         return x
