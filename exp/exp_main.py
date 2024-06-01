@@ -36,11 +36,11 @@ class Exp_Main(Exp_Basic):
 
     def _build_model(self):
         model_dict = {
+            'exp_ts': exp_ts
             'PatchMixer': PatchMixer,
             'SegRNN': SegRNN,
             'iTransformer': iTransformer,
             'TSMixer': TSMixer,
-            'exp_ts': exp_ts,
         }
         model = model_dict[self.args.model].Model(self.args).float()
 
