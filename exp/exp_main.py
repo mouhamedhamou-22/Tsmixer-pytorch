@@ -40,6 +40,7 @@ class Exp_Main(Exp_Basic):
             'SegRNN': SegRNN,
             'iTransformer': iTransformer,
             'TSMixer': TSMixer,
+            'exp_ts': exp_ts,
         }
         model = model_dict[self.args.model].Model(self.args).float()
 
