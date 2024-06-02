@@ -109,7 +109,7 @@ class Mixer_Layer(nn.Module):
         # self.batchNorm2D = nn.LayerNorm([time_dim, feat_dim]) # the norm of the paper, seems bad
         self.batchNorm2D = nn.BatchNorm1d(time_dim)
         self.MLP_time = Mlp_time(time_dim, time_dim)
-        self.MLP_feat = Mlp_feat(feat_dim, feat_dim)
+        # self.MLP_feat = Mlp_feat(feat_dim, feat_dim)
 
     def forward(self, x): # # B, L, D -> B, L, D
         res1 = x
@@ -117,10 +117,10 @@ class Mixer_Layer(nn.Module):
         x = self.MLP_time(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, D, L -> B, D, L -> B, L, D
         x = x + res1
 
-        res2 = x
-        x = self.batchNorm2D(x)
-        x = self.MLP_feat(x) # B, L, D -> B, L, D
-        x = x + res2
+        # res2 = x
+        # x = self.batchNorm2D(x)
+        # x = self.MLP_feat(x) # B, L, D -> B, L, D
+        # x = x + res2
         return x
 
 class Backbone(nn.Module):
@@ -156,6 +156,7 @@ class Mlp(nn.Module):
         self.act = nn.GELU()
         self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
+        
 
     def forward(self, x):
         x = self.fc1(x)
@@ -251,10 +252,9 @@ class Model(nn.Module):
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
 
-
     def forward(self, x, batch_x_mark, dec_inp, batch_y_mark):
         z = self.rev(x, 'norm') # B, L, D -> B, L, D
         z = self.backbone(z) # B, L, D -> B, H, D
-        #z = self.Backbone_cov(z)
+        z = self.Backbone_cov(z)
         z = self.rev(z, 'denorm') # B, H, D -> B, H, D
         return z
