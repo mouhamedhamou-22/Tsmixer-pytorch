@@ -141,7 +141,7 @@ class Backbone(nn.Module):
         # x = x.permute(0, 2, 1)  # B, L, D -> B, D, L
         # x = self.conv_layer(x)  # B, D, L -> B, D, L
         # x = x.permute(0, 2, 1)  # B, D, L -> B, L, D
-        n_block = 4
+        n_block = 1
         for _ in range(n_block):
            x = self.mix_layer(x)# B, L, D -> B, L, D
         # x = self.temp_proj(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, H, D
@@ -164,8 +164,8 @@ class Mlp(nn.Module):
         x = self.drop(x)
         x = self.fc2(x)
         x = self.drop(x)
-        return x
-        
+        return x 
+           
 class Backbone_cov(nn.Module):
     def __init__(self, configs):
         super(Backbone_cov, self).__init__()
