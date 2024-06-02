@@ -141,7 +141,7 @@ class Backbone(nn.Module):
         # x = x.permute(0, 2, 1)  # B, L, D -> B, D, L
         # x = self.conv_layer(x)  # B, D, L -> B, D, L
         # x = x.permute(0, 2, 1)  # B, D, L -> B, L, D
-        n_block = 4
+        n_block = 2
         for _ in range(n_block):
            x = self.mix_layer(x)# B, L, D -> B, L, D
         # x = self.temp_proj(x.permute(0, 2, 1)).permute(0, 2, 1) # B, L, D -> B, H, D
@@ -248,7 +248,7 @@ class Model(nn.Module):
 
         self.backbone = Backbone(configs)
         self.Backbone_cov = Backbone_cov(configs)
-
+    
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
 
