@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 data_dict = {
     'ETTh1': Dataset_ETT_hour,
     'ETTh2': Dataset_ETT_hour,
+    'weather': 
     'ETTm1': Dataset_ETT_minute,
     'ETTm2': Dataset_ETT_minute,
     'custom': Dataset_Custom,
