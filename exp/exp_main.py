@@ -136,6 +136,8 @@ class Exp_Main(Exp_Basic):
                                             max_lr = self.args.learning_rate)
 
         for epoch in range(self.args.train_epochs):
+            torch.cuda.empty_cache()
+
             iter_count = 0
             train_loss = []
 
