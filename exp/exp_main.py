@@ -109,276 +109,275 @@ class Exp_Main(Exp_Basic):
         return total_loss
     
     
-    # def train(self, setting):
-    # train_data, train_loader = self._get_data(flag='train')
-    # vali_data, vali_loader = self._get_data(flag='val')
-    # test_data, test_loader = self._get_data(flag='test')
+def train(self, setting):
+    train_data, train_loader = self._get_data(flag='train')
+    vali_data, vali_loader = self._get_data(flag='val')
+    test_data, test_loader = self._get_data(flag='test')
 
-    # path = os.path.join(self.args.checkpoints, setting)
-    # if not os.path.exists(path):
-    #     os.makedirs(path)
+    path = os.path.join(self.args.checkpoints, setting)
+    if not os.path.exists(path):
+        os.makedirs(path)
 
-    # time_now = time.time()
-    # train_start_time = time.time()
+    time_now = time.time()
+    train_start_time = time.time()
 
-    # train_steps = len(train_loader)
-    # early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
+    train_steps = len(train_loader)
+    early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
-    # model_optim = self._select_optimizer()
-    # criterion = self._select_criterion()
+    model_optim = self._select_optimizer()
+    criterion = self._select_criterion()
 
-    # if self.args.use_amp:
-    #     scaler = torch.cuda.amp.GradScaler()
-        
-    # scheduler = lr_scheduler.OneCycleLR(optimizer=model_optim,
-    #                                     steps_per_epoch=train_steps,
-    #                                     pct_start=self.args.pct_start,
-    #                                     epochs=self.args.train_epochs,
-    #                                     max_lr=self.args.learning_rate)
+    if self.args.use_amp:
+        scaler = torch.cuda.amp.GradScaler()
 
-    # for epoch in range(self.args.train_epochs):
-    #     torch.cuda.empty_cache()
+    scheduler = lr_scheduler.OneCycleLR(optimizer=model_optim,
+                                        steps_per_epoch=train_steps,
+                                        pct_start=self.args.pct_start,
+                                        epochs=self.args.train_epochs,
+                                        max_lr=self.args.learning_rate)
 
-    #     iter_count = 0
-    #     train_loss = []
+    for epoch in range(self.args.train_epochs):
+        torch.cuda.empty_cache()
 
-    #     self.model.train()
-    #     epoch_time = time.time()
+        iter_count = 0
+        train_loss = []
 
-    #     for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
-    #         iter_count += 1
+        self.model.train()
+        epoch_time = time.time()
 
-    #         # Clear optimizer gradients
-    #         model_optim.zero_grad()
+        for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+            iter_count += 1
 
-    #         # Convert batches to tensors and move to device
-    #         batch_x = batch_x.float().to(self.device)
-    #         batch_y = batch_y.float().to(self.device)
-    #         batch_x_mark = batch_x_mark.float().to(self.device)
-    #         batch_y_mark = batch_y_mark.float().to(self.device)
+            # Clear optimizer gradients
+            model_optim.zero_grad()
 
-    #         # Prepare decoder input
-    #         dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-    #         dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+            # Convert batches to tensors and move to device
+            batch_x = batch_x.float().to(self.device)
+            batch_y = batch_y.float().to(self.device)
+            batch_x_mark = batch_x_mark.float().to(self.device)
+            batch_y_mark = batch_y_mark.float().to(self.device)
 
-    #         # Accumulate outputs in smaller chunks
-    #         outputs_list = []
-    #         batch_size = batch_x.size(0)
-    #         chunk_size = 64  # You can adjust this size based on memory constraints
+            # Prepare decoder input
+            dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+            dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
 
-    #         for start in range(0, batch_size, chunk_size):
-    #             end = min(start + chunk_size, batch_size)
-    #             x_chunk = batch_x[start:end]
-    #             x_mark_chunk = batch_x_mark[start:end]
-    #             dec_inp_chunk = dec_inp[start:end]
-    #             y_mark_chunk = batch_y_mark[start:end]
+            # Accumulate outputs in smaller chunks
+            outputs_list = []
+            batch_size = batch_x.size(0)
+            chunk_size = 64  # You can adjust this size based on memory constraints
 
-    #             if self.args.use_amp:
-    #                 with torch.cuda.amp.autocast():
-    #                     outputs_chunk = self.model_forward(x_chunk, x_mark_chunk, dec_inp_chunk, y_mark_chunk)
-    #             else:
-    #                 outputs_chunk = self.model_forward(x_chunk, x_mark_chunk, dec_inp_chunk, y_mark_chunk)
-                
-    #             outputs_list.append(outputs_chunk)
+            for start in range(0, batch_size, chunk_size):
+                end = min(start + chunk_size, batch_size)
+                x_chunk = batch_x[start:end]
+                x_mark_chunk = batch_x_mark[start:end]
+                dec_inp_chunk = dec_inp[start:end]
+                y_mark_chunk = batch_y_mark[start:end]
 
-    #         # Concatenate all chunks
-    #         outputs = torch.cat(outputs_list, dim=0)
-
-    #         # Extract relevant features and compute loss
-    #         f_dim = -1 if self.args.features == 'MS' else 0
-    #         outputs = outputs[:, -self.args.pred_len:, f_dim:]
-    #         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-    #         loss = criterion(outputs, batch_y)
-    #         train_loss.append(loss.item())
-
-    #         # Log progress
-    #         if (i + 1) % 100 == 0:
-    #             print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-    #             speed = (time.time() - time_now) / iter_count
-    #             left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-    #             print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-    #             iter_count = 0
-    #             time_now = time.time()
-
-    #         # Backpropagation and optimizer step
-    #         if self.args.use_amp:
-    #             scaler.scale(loss).backward()
-    #             scaler.step(model_optim)
-    #             scaler.update()
-    #         else:
-    #             loss.backward()
-    #             model_optim.step()
-
-    #         # Update learning rate
-    #         if self.args.lradj == 'TST':
-    #             adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
-    #             scheduler.step()
-
-    #     # Epoch statistics
-    #     print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-    #     train_loss = np.average(train_loss)
-    #     vali_loss = self.vali(vali_data, vali_loader, criterion)
-    #     test_loss = self.vali(test_data, test_loader, criterion)
-
-    #     print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-    #         epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-        
-    #     # Check early stopping
-    #     early_stopping(vali_loss, self.model, path)
-    #     if early_stopping.early_stop:
-    #         print("Early stopping")
-    #         break
-
-    #     if self.args.lradj != 'TST':
-    #         adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
-    #     else:
-    #         print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
-    
-    # # Save training statistics
-    # train_end_time = time.time()
-    # training_time = train_end_time - train_start_time
-    # num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-    
-    # with open("result.txt", 'a') as f:
-    #     f.write(f"Training time: {training_time:.4f} seconds\n")
-    #     f.write(f"Number of parameters: {num_params}\n")
-        
-    # # Load the best model
-    # best_model_path = path + '/' + 'checkpoint.pth'
-    # self.model.load_state_dict(torch.load(best_model_path))
-
-    # return self.model
-
-
-    def train(self, setting):
-        train_data, train_loader = self._get_data(flag='train')
-        vali_data, vali_loader = self._get_data(flag='val')
-        test_data, test_loader = self._get_data(flag='test')
-
-        path = os.path.join(self.args.checkpoints, setting)
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-        time_now = time.time()
-        train_start_time = time.time()
-
-        train_steps = len(train_loader)
-        early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
-
-        model_optim = self._select_optimizer()
-        criterion = self._select_criterion()
-
-        if self.args.use_amp:
-            scaler = torch.cuda.amp.GradScaler()
-            
-        scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
-                                            steps_per_epoch = train_steps,
-                                            pct_start = self.args.pct_start,
-                                            epochs = self.args.train_epochs,
-                                            max_lr = self.args.learning_rate)
-
-        for epoch in range(self.args.train_epochs):
-            torch.cuda.empty_cache()
-
-            iter_count = 0
-            train_loss = []
-
-            self.model.train()
-            epoch_time = time.time()
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
-                iter_count += 1
-                model_optim.zero_grad()
-                batch_x = batch_x.float().to(self.device)
-
-                batch_y = batch_y.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
-
-                # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        if 'Linear' in self.args.model or 'TST' in self.args.model:
-                            outputs = self.model(batch_x)
-                        else:
-                            if self.args.output_attention:
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
-                            else:
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
-                        f_dim = -1 if self.args.features == 'MS' else 0
-                        outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                        batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                        loss = criterion(outputs, batch_y)
-                        train_loss.append(loss.item())
+                        outputs_chunk = self.model_forward(x_chunk, x_mark_chunk, dec_inp_chunk, y_mark_chunk)
                 else:
-                    if 'Linear' in self.args.model or 'TST' in self.args.model:
-                            outputs = self.model(batch_x)
-                    else:
-                        if self.args.output_attention:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
-                            
-                        else:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                    # print(outputs.shape,batch_y.shape)
-                    f_dim = -1 if self.args.features == 'MS' else 0
-                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                    loss = criterion(outputs, batch_y)
-                    train_loss.append(loss.item())
-
-                if (i + 1) % 100 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                    iter_count = 0
-                    time_now = time.time()
-
-                if self.args.use_amp:
-                    scaler.scale(loss).backward()
-                    scaler.step(model_optim)
-                    scaler.update()
-                else:
-                    loss.backward()
-                    model_optim.step()
-                    
-                if self.args.lradj == 'TST':
-                    adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
-                    scheduler.step()
-
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-            train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
-
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            early_stopping(vali_loss, self.model, path)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
-
-            if self.args.lradj != 'TST':
-                adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
-            else:
-                print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+                    outputs_chunk = self.model_forward(x_chunk, x_mark_chunk, dec_inp_chunk, y_mark_chunk)
                 
-        train_end_time = time.time() 
-        training_time = train_end_time - train_start_time
-        num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-        
-        with open("result.txt", 'a') as f:
-            f.write(f"Training time: {training_time:.4f} seconds\n")
-            f.write(f"Number of parameters: {num_params}\n")
-            
-        best_model_path = path + '/' + 'checkpoint.pth'
-        self.model.load_state_dict(torch.load(best_model_path))
+                outputs_list.append(outputs_chunk)
 
-        return self.model
+            # Concatenate all chunks
+            outputs = torch.cat(outputs_list, dim=0)
+
+            # Extract relevant features and compute loss
+            f_dim = -1 if self.args.features == 'MS' else 0
+            outputs = outputs[:, -self.args.pred_len:, f_dim:]
+            batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+            loss = criterion(outputs, batch_y)
+            train_loss.append(loss.item())
+
+            # Log progress
+            if (i + 1) % 100 == 0:
+                print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                speed = (time.time() - time_now) / iter_count
+                left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+                print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                iter_count = 0
+                time_now = time.time()
+
+            # Backpropagation and optimizer step
+            if self.args.use_amp:
+                scaler.scale(loss).backward()
+                scaler.step(model_optim)
+                scaler.update()
+            else:
+                loss.backward()
+                model_optim.step()
+
+            # Update learning rate
+            if self.args.lradj == 'TST':
+                adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
+                scheduler.step()
+
+        # Epoch statistics
+        print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+        train_loss = np.average(train_loss)
+        vali_loss = self.vali(vali_data, vali_loader, criterion)
+        test_loss = self.vali(test_data, test_loader, criterion)
+
+        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+            epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+        
+        # Check early stopping
+        early_stopping(vali_loss, self.model, path)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
+
+        if self.args.lradj != 'TST':
+            adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
+        else:
+            print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+    
+    # Save training statistics
+    train_end_time = time.time()
+    training_time = train_end_time - train_start_time
+    num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+    
+    with open("result.txt", 'a') as f:
+        f.write(f"Training time: {training_time:.4f} seconds\n")
+        f.write(f"Number of parameters: {num_params}\n")
+        
+    # Load the best model
+    best_model_path = path + '/' + 'checkpoint.pth'
+    self.model.load_state_dict(torch.load(best_model_path))
+
+    return self.model
+
+    # def train(self, setting):
+    #     train_data, train_loader = self._get_data(flag='train')
+    #     vali_data, vali_loader = self._get_data(flag='val')
+    #     test_data, test_loader = self._get_data(flag='test')
+
+    #     path = os.path.join(self.args.checkpoints, setting)
+    #     if not os.path.exists(path):
+    #         os.makedirs(path)
+
+    #     time_now = time.time()
+    #     train_start_time = time.time()
+
+    #     train_steps = len(train_loader)
+    #     early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
+
+    #     model_optim = self._select_optimizer()
+    #     criterion = self._select_criterion()
+
+    #     if self.args.use_amp:
+    #         scaler = torch.cuda.amp.GradScaler()
+            
+    #     scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
+    #                                         steps_per_epoch = train_steps,
+    #                                         pct_start = self.args.pct_start,
+    #                                         epochs = self.args.train_epochs,
+    #                                         max_lr = self.args.learning_rate)
+
+    #     for epoch in range(self.args.train_epochs):
+    #         torch.cuda.empty_cache()
+
+    #         iter_count = 0
+    #         train_loss = []
+
+    #         self.model.train()
+    #         epoch_time = time.time()
+    #         for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+    #             iter_count += 1
+    #             model_optim.zero_grad()
+    #             batch_x = batch_x.float().to(self.device)
+
+    #             batch_y = batch_y.float().to(self.device)
+    #             batch_x_mark = batch_x_mark.float().to(self.device)
+    #             batch_y_mark = batch_y_mark.float().to(self.device)
+
+    #             # decoder input
+    #             dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+    #             dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+
+    #             # encoder - decoder
+    #             if self.args.use_amp:
+    #                 with torch.cuda.amp.autocast():
+    #                     if 'Linear' in self.args.model or 'TST' in self.args.model:
+    #                         outputs = self.model(batch_x)
+    #                     else:
+    #                         if self.args.output_attention:
+    #                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+    #                         else:
+    #                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+
+    #                     f_dim = -1 if self.args.features == 'MS' else 0
+    #                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
+    #                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+    #                     loss = criterion(outputs, batch_y)
+    #                     train_loss.append(loss.item())
+    #             else:
+    #                 if 'Linear' in self.args.model or 'TST' in self.args.model:
+    #                         outputs = self.model(batch_x)
+    #                 else:
+    #                     if self.args.output_attention:
+    #                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            
+    #                     else:
+    #                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+    #                 # print(outputs.shape,batch_y.shape)
+    #                 f_dim = -1 if self.args.features == 'MS' else 0
+    #                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
+    #                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+    #                 loss = criterion(outputs, batch_y)
+    #                 train_loss.append(loss.item())
+
+    #             if (i + 1) % 100 == 0:
+    #                 print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+    #                 speed = (time.time() - time_now) / iter_count
+    #                 left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+    #                 print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+    #                 iter_count = 0
+    #                 time_now = time.time()
+
+    #             if self.args.use_amp:
+    #                 scaler.scale(loss).backward()
+    #                 scaler.step(model_optim)
+    #                 scaler.update()
+    #             else:
+    #                 loss.backward()
+    #                 model_optim.step()
+                    
+    #             if self.args.lradj == 'TST':
+    #                 adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
+    #                 scheduler.step()
+
+    #         print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+    #         train_loss = np.average(train_loss)
+    #         vali_loss = self.vali(vali_data, vali_loader, criterion)
+    #         test_loss = self.vali(test_data, test_loader, criterion)
+
+    #         print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+    #             epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+    #         early_stopping(vali_loss, self.model, path)
+    #         if early_stopping.early_stop:
+    #             print("Early stopping")
+    #             break
+
+    #         if self.args.lradj != 'TST':
+    #             adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
+    #         else:
+    #             print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+                
+    #     train_end_time = time.time() 
+    #     training_time = train_end_time - train_start_time
+    #     num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        
+    #     with open("result.txt", 'a') as f:
+    #         f.write(f"Training time: {training_time:.4f} seconds\n")
+    #         f.write(f"Number of parameters: {num_params}\n")
+            
+    #     best_model_path = path + '/' + 'checkpoint.pth'
+    #     self.model.load_state_dict(torch.load(best_model_path))
+
+    #     return self.model
 
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
