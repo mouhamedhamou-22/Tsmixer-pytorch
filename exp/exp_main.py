@@ -23,20 +23,12 @@ from torch import Tensor
 import torch.nn.functional as F
 from torch.nn.modules import Module
 
-
-class CustomLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-    def forward(self, x, y):
-        return 0.5 * F.mse_loss(x, y) + 0.5 * F.l1_loss(x, y)
-
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
         super(Exp_Main, self).__init__(args)
 
     def _build_model(self):
         model_dict = {
-            # 'exp_ts': exp_ts,
             'PatchMixer': PatchMixer,
             'SegRNN': SegRNN,
             'iTransformer': iTransformer,
@@ -49,7 +41,7 @@ class Exp_Main(Exp_Basic):
         return model
 
     def _get_data(self, flag):
-        data_set, data_loader = data_provider(self.args, flag)
+        data_set, data_loader = data_provider(self.args, flag, batch_size=self.args.batch_size)  # Modify to batch the data
         return data_set, data_loader
 
     def _select_optimizer(self):
@@ -107,8 +99,7 @@ class Exp_Main(Exp_Basic):
         total_loss = np.average(total_loss)
         self.model.train()
         return total_loss
-    
-    
+
     def train(self, setting):
         
         train_data, train_loader = self._get_data(flag='train')
