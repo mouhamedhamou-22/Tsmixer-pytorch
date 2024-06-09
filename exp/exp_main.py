@@ -129,7 +129,7 @@ def train(self, setting):
 
     if self.args.use_amp:
         scaler = torch.cuda.amp.GradScaler()
-
+        
     scheduler = lr_scheduler.OneCycleLR(optimizer=model_optim,
                                         steps_per_epoch=train_steps,
                                         pct_start=self.args.pct_start,
@@ -145,53 +145,60 @@ def train(self, setting):
         self.model.train()
         epoch_time = time.time()
 
+        # Sequentially process batches and accumulate gradients
         for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
             iter_count += 1
 
-            # Clear optimizer gradients
-            model_optim.zero_grad()
-
-            # Convert batches to tensors and move to device
             batch_x = batch_x.float().to(self.device)
             batch_y = batch_y.float().to(self.device)
             batch_x_mark = batch_x_mark.float().to(self.device)
             batch_y_mark = batch_y_mark.float().to(self.device)
 
-            # Prepare decoder input
-            dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-            dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+            # Sequentially process smaller batches to avoid OOM
+            for j in range(0, len(batch_x), self.args.sub_batch_size):
+                sub_batch_x = batch_x[j:j+self.args.sub_batch_size]
+                sub_batch_y = batch_y[j:j+self.args.sub_batch_size]
+                sub_batch_x_mark = batch_x_mark[j:j+self.args.sub_batch_size]
+                sub_batch_y_mark = batch_y_mark[j:j+self.args.sub_batch_size]
 
-            # Accumulate outputs in smaller chunks
-            outputs_list = []
-            batch_size = batch_x.size(0)
-            chunk_size = 64  # You can adjust this size based on memory constraints
+                # Zero gradients for sub-batch
+                model_optim.zero_grad()
 
-            for start in range(0, batch_size, chunk_size):
-                end = min(start + chunk_size, batch_size)
-                x_chunk = batch_x[start:end]
-                x_mark_chunk = batch_x_mark[start:end]
-                dec_inp_chunk = dec_inp[start:end]
-                y_mark_chunk = batch_y_mark[start:end]
+                # Prepare decoder input
+                dec_inp = torch.zeros_like(sub_batch_y[:, -self.args.pred_len:, :]).float()
+                dec_inp = torch.cat([sub_batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
 
+                # Forward pass
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        outputs_chunk = self.model_forward(x_chunk, x_mark_chunk, dec_inp_chunk, y_mark_chunk)
+                        outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)
+                        if self.args.output_attention:
+                            outputs = outputs[0]
+
+                        f_dim = -1 if self.args.features == 'MS' else 0
+                        outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                        sub_batch_y = sub_batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                        loss = criterion(outputs, sub_batch_y)
                 else:
-                    outputs_chunk = self.model_forward(x_chunk, x_mark_chunk, dec_inp_chunk, y_mark_chunk)
-                
-                outputs_list.append(outputs_chunk)
+                    outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)
+                    if self.args.output_attention:
+                        outputs = outputs[0]
 
-            # Concatenate all chunks
-            outputs = torch.cat(outputs_list, dim=0)
+                    f_dim = -1 if self.args.features == 'MS' else 0
+                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                    sub_batch_y = sub_batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                    loss = criterion(outputs, sub_batch_y)
 
-            # Extract relevant features and compute loss
-            f_dim = -1 if self.args.features == 'MS' else 0
-            outputs = outputs[:, -self.args.pred_len:, f_dim:]
-            batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-            loss = criterion(outputs, batch_y)
-            train_loss.append(loss.item())
+                train_loss.append(loss.item())
 
-            # Log progress
+                if self.args.use_amp:
+                    scaler.scale(loss).backward()
+                    scaler.step(model_optim)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    model_optim.step()
+
             if (i + 1) % 100 == 0:
                 print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
                 speed = (time.time() - time_now) / iter_count
@@ -200,21 +207,10 @@ def train(self, setting):
                 iter_count = 0
                 time_now = time.time()
 
-            # Backpropagation and optimizer step
-            if self.args.use_amp:
-                scaler.scale(loss).backward()
-                scaler.step(model_optim)
-                scaler.update()
-            else:
-                loss.backward()
-                model_optim.step()
-
-            # Update learning rate
             if self.args.lradj == 'TST':
                 adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
                 scheduler.step()
 
-        # Epoch statistics
         print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
         train_loss = np.average(train_loss)
         vali_loss = self.vali(vali_data, vali_loader, criterion)
@@ -222,8 +218,6 @@ def train(self, setting):
 
         print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
             epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-        
-        # Check early stopping
         early_stopping(vali_loss, self.model, path)
         if early_stopping.early_stop:
             print("Early stopping")
@@ -233,17 +227,15 @@ def train(self, setting):
             adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
         else:
             print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
-    
-    # Save training statistics
+
     train_end_time = time.time()
     training_time = train_end_time - train_start_time
     num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-    
+
     with open("result.txt", 'a') as f:
         f.write(f"Training time: {training_time:.4f} seconds\n")
         f.write(f"Number of parameters: {num_params}\n")
-        
-    # Load the best model
+
     best_model_path = path + '/' + 'checkpoint.pth'
     self.model.load_state_dict(torch.load(best_model_path))
 
