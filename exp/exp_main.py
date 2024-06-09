@@ -109,138 +109,127 @@ class Exp_Main(Exp_Basic):
         return total_loss
     
     
-def train(self, setting):
-    train_data, train_loader = self._get_data(flag='train')
-    vali_data, vali_loader = self._get_data(flag='val')
-    test_data, test_loader = self._get_data(flag='test')
+ def train(self, setting):
+        train_data, train_loader = self._get_data(flag='train')
+        vali_data, vali_loader = self._get_data(flag='val')
+        test_data, test_loader = self._get_data(flag='test')
 
-    path = os.path.join(self.args.checkpoints, setting)
-    if not os.path.exists(path):
-        os.makedirs(path)
+        path = os.path.join(self.args.checkpoints, setting)
+        if not os.path.exists(path):
+            os.makedirs(path)
 
-    time_now = time.time()
-    train_start_time = time.time()
+        train_steps = len(train_loader)
+        early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
+        model_optim = self._select_optimizer()
+        criterion = self._select_criterion()
 
-    train_steps = len(train_loader)
-    early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
+        if self.args.use_amp:
+            scaler = torch.cuda.amp.GradScaler()
+            
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer=model_optim,
+            steps_per_epoch=train_steps,
+            pct_start=self.args.pct_start,
+            epochs=self.args.train_epochs,
+            max_lr=self.args.learning_rate
+        )
 
-    model_optim = self._select_optimizer()
-    criterion = self._select_criterion()
+        for epoch in range(self.args.train_epochs):
+            torch.cuda.empty_cache()
+            iter_count = 0
+            train_loss = []
 
-    if self.args.use_amp:
-        scaler = torch.cuda.amp.GradScaler()
-        
-    scheduler = lr_scheduler.OneCycleLR(optimizer=model_optim,
-                                        steps_per_epoch=train_steps,
-                                        pct_start=self.args.pct_start,
-                                        epochs=self.args.train_epochs,
-                                        max_lr=self.args.learning_rate)
+            self.model.train()
+            epoch_time = time.time()
 
-    for epoch in range(self.args.train_epochs):
-        torch.cuda.empty_cache()
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                batch_size = batch_x.size(0)
+                sub_batch_size = self.args.batch_size // 4  # Process in smaller sub-batches
+                num_sub_batches = (batch_size + sub_batch_size - 1) // sub_batch_size
 
-        iter_count = 0
-        train_loss = []
+                for j in range(num_sub_batches):
+                    sub_batch_x = batch_x[j * sub_batch_size:(j + 1) * sub_batch_size].float().to(self.device)
+                    sub_batch_y = batch_y[j * sub_batch_size:(j + 1) * sub_batch_size].float().to(self.device)
+                    sub_batch_x_mark = batch_x_mark[j * sub_batch_size:(j + 1) * sub_batch_size].float().to(self.device)
+                    sub_batch_y_mark = batch_y_mark[j * sub_batch_size:(j + 1) * sub_batch_size].float().to(self.device)
 
-        self.model.train()
-        epoch_time = time.time()
+                    model_optim.zero_grad()
 
-        # Sequentially process batches and accumulate gradients
-        for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
-            iter_count += 1
+                    dec_inp = torch.zeros_like(sub_batch_y[:, -self.args.pred_len:, :]).float()
+                    dec_inp = torch.cat([sub_batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
 
-            batch_x = batch_x.float().to(self.device)
-            batch_y = batch_y.float().to(self.device)
-            batch_x_mark = batch_x_mark.float().to(self.device)
-            batch_y_mark = batch_y_mark.float().to(self.device)
+                    if self.args.use_amp:
+                        with torch.cuda.amp.autocast():
+                            if self.args.output_attention:
+                                outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)[0]
+                            else:
+                                outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)
 
-            # Sequentially process smaller batches to avoid OOM
-            for j in range(0, len(batch_x), self.args.sub_batch_size):
-                sub_batch_x = batch_x[j:j+self.args.sub_batch_size]
-                sub_batch_y = batch_y[j:j+self.args.sub_batch_size]
-                sub_batch_x_mark = batch_x_mark[j:j+self.args.sub_batch_size]
-                sub_batch_y_mark = batch_y_mark[j:j+self.args.sub_batch_size]
-
-                # Zero gradients for sub-batch
-                model_optim.zero_grad()
-
-                # Prepare decoder input
-                dec_inp = torch.zeros_like(sub_batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([sub_batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
-
-                # Forward pass
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)
+                            f_dim = -1 if self.args.features == 'MS' else 0
+                            outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                            sub_batch_y = sub_batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                            loss = criterion(outputs, sub_batch_y)
+                    else:
                         if self.args.output_attention:
-                            outputs = outputs[0]
+                            outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)[0]
+                        else:
+                            outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)
 
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         sub_batch_y = sub_batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                         loss = criterion(outputs, sub_batch_y)
-                else:
-                    outputs = self.model(sub_batch_x, sub_batch_x_mark, dec_inp, sub_batch_y_mark)
-                    if self.args.output_attention:
-                        outputs = outputs[0]
 
-                    f_dim = -1 if self.args.features == 'MS' else 0
-                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                    sub_batch_y = sub_batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                    loss = criterion(outputs, sub_batch_y)
+                    train_loss.append(loss.item())
 
-                train_loss.append(loss.item())
+                    if self.args.use_amp:
+                        scaler.scale(loss).backward()
+                        scaler.step(model_optim)
+                        scaler.update()
+                    else:
+                        loss.backward()
+                        model_optim.step()
 
-                if self.args.use_amp:
-                    scaler.scale(loss).backward()
-                    scaler.step(model_optim)
-                    scaler.update()
-                else:
-                    loss.backward()
-                    model_optim.step()
+                if (i + 1) % 100 == 0:
+                    print(f"\titers: {i + 1}, epoch: {epoch + 1} | loss: {loss.item():.7f}")
+                    speed = (time.time() - epoch_time) / iter_count
+                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+                    print(f'\tspeed: {speed:.4f}s/iter; left time: {left_time:.4f}s')
+                    iter_count = 0
+                    epoch_time = time.time()
 
-            if (i + 1) % 100 == 0:
-                print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                speed = (time.time() - time_now) / iter_count
-                left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                iter_count = 0
-                time_now = time.time()
+                if self.args.lradj == 'TST':
+                    adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
+                    scheduler.step()
 
-            if self.args.lradj == 'TST':
-                adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
-                scheduler.step()
+            print(f"Epoch: {epoch + 1} cost time: {time.time() - epoch_time}")
+            train_loss = np.average(train_loss)
+            vali_loss = self.vali(vali_data, vali_loader, criterion)
+            test_loss = self.vali(test_data, test_loader, criterion)
 
-        print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-        train_loss = np.average(train_loss)
-        vali_loss = self.vali(vali_data, vali_loader, criterion)
-        test_loss = self.vali(test_data, test_loader, criterion)
+            print(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}")
+            early_stopping(vali_loss, self.model, path)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break
 
-        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-            epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-        early_stopping(vali_loss, self.model, path)
-        if early_stopping.early_stop:
-            print("Early stopping")
-            break
+            if self.args.lradj != 'TST':
+                adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
+            else:
+                print(f'Updating learning rate to {scheduler.get_last_lr()[0]}')
 
-        if self.args.lradj != 'TST':
-            adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
-        else:
-            print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+        train_end_time = time.time()
+        training_time = train_end_time - epoch_time
+        num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
-    train_end_time = time.time()
-    training_time = train_end_time - train_start_time
-    num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        with open("result.txt", 'a') as f:
+            f.write(f"Training time: {training_time:.4f} seconds\n")
+            f.write(f"Number of parameters: {num_params}\n")
 
-    with open("result.txt", 'a') as f:
-        f.write(f"Training time: {training_time:.4f} seconds\n")
-        f.write(f"Number of parameters: {num_params}\n")
+        best_model_path = os.path.join(path, 'checkpoint.pth')
+        self.model.load_state_dict(torch.load(best_model_path))
 
-    best_model_path = path + '/' + 'checkpoint.pth'
-    self.model.load_state_dict(torch.load(best_model_path))
-
-    return self.model
-
+        return self.model
     # def train(self, setting):
     #     train_data, train_loader = self._get_data(flag='train')
     #     vali_data, vali_loader = self._get_data(flag='val')
